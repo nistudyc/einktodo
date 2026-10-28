@@ -110,6 +110,14 @@ npx wrangler deploy --dry-run
 
 显示约定见 [DESIGN.md](DESIGN.md)，安全与恢复说明见 [SECURITY.md](SECURITY.md)。
 
+## 致谢与项目来源
+
+感谢 [esonwong](https://github.com/esonwong) 的 [e-ink-todo-list（墨水屏 Todo List）](https://github.com/esonwong/e-ink-todo-list) 项目。
+
+本项目使用的墨水屏硬件购自 esonwong，并在其项目提供的硬件、固件和服务端位图接口基础上进行适配与扩展，增加了 Cloudflare 云端服务、飞书待办与邮件数量同步、Passkey、加密存储和中文显示排版。感谢原作者的开源分享和硬件支持。
+
+硬件制作、固件与原项目的使用方式，请优先参考原仓库及 [esonwong 的制作教程](https://blog.esonwong.com/e-ink-screen-todo-list-creation-turial)。本仓库发布的是配套云端服务与界面。
+
 ## 许可
 
 本项目源码采用 [MIT](LICENSE) 许可。第三方依赖、硬件固件及使用的字体各自遵循原许可；MIT 不授予第三方字体的再分发权利。
