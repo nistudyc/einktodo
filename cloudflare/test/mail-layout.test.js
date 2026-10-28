@@ -59,7 +59,7 @@ test('first cloud access seeds unread snapshot in the background without needing
  } finally {fetchMock.mock.restore();}
 });
 
-test('native small font covers display text; only current weather affects pixels',async()=>{
+test('native small font covers display text and both footer forecasts remain visible',async()=>{
  const small=await import('../font_small_data.js');
  assert.equal(small.FONT_H,24);
  for(const ch of new Set(MOTTOS.join('')+'明天后天多云小雨佛山'))assert.ok(isAscii(ch)?small.getAscii(ch):small.getGlyph(ch),`Missing small ${ch}`);
@@ -68,7 +68,7 @@ test('native small font covers display text; only current weather affects pixels
   const original=renderDisplay(state,w,h);
   for(const i of [1,2]){
    const changed=structuredClone(state);changed.weather.days[i].hi=35;
-   assert.deepEqual(renderDisplay(changed,w,h),original,`Forecast ${i} should stay hidden at ${w}x${h}`);
+   assert.notDeepEqual(renderDisplay(changed,w,h),original,`Forecast ${i} must be visible at ${w}x${h}`);
   }
   const warmer=structuredClone(state);warmer.weather.temp=35;assert.notDeepEqual(renderDisplay(warmer,w,h),original);
   const completed=structuredClone(state);completed.config.todos=[{text:'已完成任务',done:true}];

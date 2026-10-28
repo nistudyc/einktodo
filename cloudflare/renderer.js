@@ -341,7 +341,7 @@ export function renderDisplay(state, width, height) {
   }
 
   const top = PAD + 52;
-  const footerTop = height - PAD - 24;
+  const footerTop = height - PAD - (narrow ? 50 : 24);
   const todoW = innerW;
   const todos=(cfg.todos||[]).filter(todo=>!todo.done);
   const dateLabels=todos.map(todo=>{
@@ -386,10 +386,21 @@ export function renderDisplay(state, width, height) {
   if(state.tasks?.error)compact(PAD+72,footerTop-24,'同步待更新',todoW-72);
   if(hasCreation && !state.tasks?.error)compact(PAD+todoW-110,footerTop-24,'* 创建日期',110);
 
-  // Weather is optional supporting information; keep only today's conditions.
+  // Keep all three days in the supporting footer; narrow screens use two lines.
   if (weather && !weather.error) {
     bm.drawHLine(PAD,footerTop,innerW,1);
-    compact(PAD,footerTop+6,`${cfg.city.name}  ${weather.temp}° ${weather.desc}`,innerW);
+    const colW=Math.floor(innerW/3), y=footerTop+4;
+    const today=`${weather.temp}° ${weather.desc}`;
+    bm.drawSmall(PAD,y,fit(narrow?today:`${cfg.city.name} ${today}`,colW-10,24));
+    if(narrow)compact(PAD,y+26,cfg.city.name,colW-10);
+    for(const [i,day] of (weather.days||[]).slice(1,3).entries()){
+      const x=PAD+(i+1)*colW, label=i?'后天':'明天';
+      const range=`${day.lo}°/${day.hi}°`;
+      if(narrow){
+        compact(x,y,`${label} ${day.desc}`,colW-8);
+        compact(x,y+24,range,colW-8);
+      }else compact(x,y+4,`${label} ${day.desc} ${range}`,colW-8);
+    }
   }
   return bm.buf;
 }
