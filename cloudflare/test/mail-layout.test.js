@@ -33,12 +33,12 @@ test('120 daily notes rotate on the calendar date with full font coverage',()=>{
  assert.notEqual(dailyMotto('2026-10-28'),dailyMotto('2026-10-29'));
  for(const ch of new Set(MOTTOS.join('')))assert.ok(isAscii(ch)?getAscii(ch):getGlyph(ch),`Missing ${ch}`);
 });
-test('clock values and email content never affect pixels, while unread count and daily quote do',()=>{
+test('secondary hidden content never affects pixels while unread count does',()=>{
  const state={config:{city:{name:'佛山'},todos:[{text:'第一件要完成的事情',done:false}]},date:'2026-10-28',weekday:'三',lunar:'丙午年 九月十九',motto:dailyMotto('2026-10-28'),mail:{unreadCount:1,stale:false},weather:{error:'unavailable'}};
  const original=renderDisplay(state,800,480);
  assert.deepEqual(renderDisplay({...state,updated:'12:59',now:'different',mail:{...state.mail,messages:[{subject:'private',from:'someone'}]}},800,480),original);
  assert.notDeepEqual(renderDisplay({...state,mail:{unreadCount:2,stale:false}},800,480),original);
- assert.notDeepEqual(renderDisplay({...state,motto:dailyMotto('2026-10-29')},800,480),original);
+ assert.deepEqual(renderDisplay({...state,motto:dailyMotto('2026-10-29')},800,480),original);
 });
 test('scheduled sync uses the owner service and reports failures to the scheduler',async()=>{
  const {default:worker}=await import('../worker.js');let called=false,pending;
@@ -59,7 +59,7 @@ test('first cloud access seeds unread snapshot in the background without needing
  } finally {fetchMock.mock.restore();}
 });
 
-test('native small font covers display text and both forecasts remain visible',async()=>{
+test('native small font covers display text; only current weather affects pixels',async()=>{
  const small=await import('../font_small_data.js');
  assert.equal(small.FONT_H,24);
  for(const ch of new Set(MOTTOS.join('')+'明天后天多云小雨佛山'))assert.ok(isAscii(ch)?small.getAscii(ch):small.getGlyph(ch),`Missing small ${ch}`);
@@ -68,8 +68,9 @@ test('native small font covers display text and both forecasts remain visible',a
   const original=renderDisplay(state,w,h);
   for(const i of [1,2]){
    const changed=structuredClone(state);changed.weather.days[i].hi=35;
-   assert.notDeepEqual(renderDisplay(changed,w,h),original,`Forecast ${i} must be visible at ${w}x${h}`);
+   assert.deepEqual(renderDisplay(changed,w,h),original,`Forecast ${i} should stay hidden at ${w}x${h}`);
   }
+  const warmer=structuredClone(state);warmer.weather.temp=35;assert.notDeepEqual(renderDisplay(warmer,w,h),original);
   const completed=structuredClone(state);completed.config.todos=[{text:'已完成任务',done:true}];
   assert.deepEqual(renderDisplay(completed,w,h),original);
  }
@@ -84,4 +85,25 @@ test('compact layout hides lunar text, preserves native auxiliary glyphs and fit
  assert.deepEqual(renderDisplay({...state,lunar:'隐藏的农历'},800,480),original);
  const seventh=structuredClone(state);seventh.config.todos[6].text='第七项已可见';assert.notDeepEqual(renderDisplay(seventh,800,480),original);
  const eighth=structuredClone(state);eighth.config.todos[7].text='第八项未显示';assert.deepEqual(renderDisplay(eighth,800,480),original);
+});
+
+test('date and unread mail have equal text height and unread ink is centered in its badge',()=>{
+ const state={config:{city:{name:'佛山'},todos:[]},date:'2026-10-28',weekday:'三',mail:{unreadCount:3},weather:{error:'unavailable'}};
+ const bounds=(pixels,w,x,y,width,height,white)=>{
+  let left=x+width,right=x-1,top=y+height,bottom=y-1;
+  const stride=Math.ceil(w/8);
+  for(let yy=y;yy<y+height;yy++)for(let xx=x;xx<x+width;xx++){
+   const black=!!(pixels[yy*stride+(xx>>3)]&(0x80>>(xx&7)));
+   if(white?!black:black){left=Math.min(left,xx);right=Math.max(right,xx);top=Math.min(top,yy);bottom=Math.max(bottom,yy);}
+  }
+  return {left,right,top,bottom};
+ };
+ for(const w of [480,800])for(const count of [1,13,999]){
+  const pixels=renderDisplay({...state,mail:{unreadCount:count}},w,480),badgeW=w<600?160:224,x=w-16-badgeW;
+  const ink=bounds(pixels,w,x,16,badgeW,40,true);
+  assert.ok(Math.abs((ink.left+ink.right)/2-(x+(badgeW-1)/2))<=0.5);
+  assert.ok(Math.abs((ink.top+ink.bottom)/2-(16+39/2))<=0.5);
+  const date=bounds(pixels,w,16,16,x-32,40,false);
+  assert.ok(Math.abs((ink.bottom-ink.top)-(date.bottom-date.top))<=2);
+ }
 });

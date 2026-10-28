@@ -171,6 +171,24 @@ export class Bitmap {
     }
   }
 
+  // Center the actual ink bounds, including font side bearings and vertical padding.
+  drawTextInBox(x, y, w, h, str, inverse = false) {
+    const text = new Bitmap(this.measureText(str), FONT_H);
+    text.drawText(0, 0, str);
+    let left = text.w, right = -1, top = FONT_H, bottom = -1;
+    for (let yy = 0; yy < text.h; yy++) for (let xx = 0; xx < text.w; xx++) {
+      if (text.buf[yy * text.bpr + (xx >> 3)] & (0x80 >> (xx & 7))) {
+        left = Math.min(left,xx); right = Math.max(right,xx);
+        top = Math.min(top,yy); bottom = Math.max(bottom,yy);
+      }
+    }
+    if (right < left) return;
+    const tx = x + Math.floor((w-(right-left+1))/2)-left;
+    const ty = y + Math.floor((h-(bottom-top+1))/2)-top;
+    if (inverse) this.drawTextInverse(tx,ty,str);
+    else this.drawText(tx,ty,str);
+  }
+
   // 居中文本
   drawTextCenter(cx, y, str, scale = 1) {
     const w = this.measureText(str, scale);
@@ -297,7 +315,7 @@ export function renderDisplay(state, width, height) {
   const bm = new Bitmap(width, height);
   const PAD = width < 400 ? 12 : 16;
   const innerW = width - PAD * 2;
-  const { config: cfg, weekday, date, mail, weather, motto } = state;
+  const { config: cfg, weekday, date, mail, weather } = state;
   const measure = (text, size = 32) => bm.measureText(String(text)) * size / 32;
   const fit = (text, maxW, size = 32) => {
     let chars = Array.from(String(text || ""));
@@ -309,23 +327,22 @@ export function renderDisplay(state, width, height) {
   const narrow = width < 600;
   const mailW = narrow ? 160 : 224;
   const mx = width - PAD - mailW;
-  compact(PAD, PAD + 10, `${date.replaceAll('-','.')} 周${weekday}`, innerW-mailW-16);
+  const dateText = `${(width < 480 ? date.slice(5) : date).replaceAll('-','.')} 周${weekday}`;
+  bm.drawText(PAD, PAD + 4, fit(dateText,innerW-mailW-16));
   const count = mail?.unreadCount;
   const known = Number.isSafeInteger(count) && count >= 0;
   const stale = mail?.stale || mail?.error;
   const label = known ? `${narrow ? '未读' : '未读邮件'} ${count}` : '邮件未连接';
   if (known && !stale && count > 0) {
     bm.fillRect(mx, PAD, mailW, 40);
-    bm.drawTextInverse(mx + 8, PAD + 4, fit(label,mailW-16));
+    bm.drawTextInBox(mx,PAD,mailW,40,fit(label,mailW-16),true);
   } else {
-    compact(mx+8,PAD+4,known && stale ? `上次未读 ${count}` : label,mailW-16);
-    if (stale) compact(mx+8,PAD+24,'同步待更新',mailW-16);
+    bm.drawTextInBox(mx,PAD,mailW,40,fit(known && stale ? `上次未读 ${count}` : label,mailW-16));
   }
 
-  const top = PAD + 52, gap = 18;
-  const footerTop = height - PAD - 30;
-  const weatherW = Math.max(100, Math.min(140,Math.floor(innerW*0.15)));
-  const todoW = innerW-weatherW-gap, wx = PAD+todoW+gap;
+  const top = PAD + 52;
+  const footerTop = height - PAD - 24;
+  const todoW = innerW;
   const todos=(cfg.todos||[]).filter(todo=>!todo.done);
   const dateLabels=todos.map(todo=>{
     const timestamp=todo.dueAt||todo.createdAt;
@@ -335,11 +352,9 @@ export function renderDisplay(state, width, height) {
   });
   const dateW = Math.max(60,...dateLabels.map(label=>measure(label,20))), inlineDate = todoW >= 480;
   bm.drawHLine(PAD,top-6,innerW,2);
-  bm.fillRect(PAD,top+6,4,24);
-  bm.drawText(PAD+12,top,'待办');
+  bm.drawText(PAD,top,'待办');
   if (inlineDate) compact(PAD+todoW-dateW,top+8,'截止',dateW);
   bm.drawHLine(PAD,top+38,todoW,1);
-  bm.drawVLine(wx-gap/2,top,footerTop-top-10);
 
   const textX=PAD+36, textW=todoW-36-(inlineDate?dateW+14:0);
   let y=top+46, shown=0, hasCreation=false;
@@ -371,26 +386,11 @@ export function renderDisplay(state, width, height) {
   if(state.tasks?.error)compact(PAD+72,footerTop-24,'同步待更新',todoW-72);
   if(hasCreation && !state.tasks?.error)compact(PAD+todoW-110,footerTop-24,'* 创建日期',110);
 
-  compact(wx,top+8,cfg.city.name,weatherW);
-  bm.drawHLine(wx,top+38,weatherW,1);
-  let wy=top+48;
-  if(!weather || weather.error) {
-    compact(wx,wy,'天气暂不可用',weatherW);
-  } else {
-    bm.drawText(wx,wy,fit(`${weather.temp}°`,weatherW));
-    bm.drawSmall(wx,wy+36,fit(weather.desc,weatherW,24));
-    wy+=76;
-    for(const [i,day] of (weather.days||[]).slice(1,3).entries()){
-      if(wy+66>footerTop-10)break;
-      bm.drawHLine(wx,wy-6,weatherW,1);
-      compact(wx,wy,i?'后天':'明天',weatherW);
-      compact(wx,wy+22,day.desc,weatherW);
-      compact(wx,wy+44,`${day.lo}°/${day.hi}°`,weatherW);
-      wy+=78;
-    }
+  // Weather is optional supporting information; keep only today's conditions.
+  if (weather && !weather.error) {
+    bm.drawHLine(PAD,footerTop,innerW,1);
+    compact(PAD,footerTop+6,`${cfg.city.name}  ${weather.temp}° ${weather.desc}`,innerW);
   }
-  bm.drawHLine(PAD,footerTop,innerW,1);
-  compact(PAD,footerTop+8,motto||cfg.motto||'',innerW);
   return bm.buf;
 }
 
