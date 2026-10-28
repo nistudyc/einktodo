@@ -1,0 +1,198 @@
+#!/usr/bin/env python3
+"""Generate native-size 32px, 24px and 20px monochrome Songti fonts; never subsample strokes."""
+import base64, json, sys, os
+from pathlib import Path
+from PIL import Image, ImageDraw, ImageFont
+
+FONT_PATH = os.environ.get("EINK_FONT_PATH", "/System/Library/Fonts/Supplemental/Songti.ttc")
+CJK_PX = int(sys.argv[1]) if len(sys.argv) > 1 else 32
+ASCII_PX = CJK_PX - 4
+
+# Try Songti face indices
+def load_font(size):
+    face_override = os.environ.get("EINK_FONT_FACE")
+    candidates = (int(face_override),) if face_override is not None else ((6,) if CJK_PX == 20 else (0, 1, 2, 3, 4))
+    for idx in candidates:
+        try:
+            f = ImageFont.truetype(FONT_PATH, size, index=idx)
+            # Quick sanity: render a known CJK char
+            img = Image.new("L", (size, size), 255)
+            d = ImageDraw.Draw(img)
+            d.text((0, 0), "中", font=f, fill=0)
+            if min(img.getdata()) < 128:
+                return f
+        except Exception:
+            continue
+    raise RuntimeError("No usable font face; set EINK_FONT_PATH and EINK_FONT_FACE for your licensed CJK font")
+
+cjk_font = load_font(CJK_PX)
+ascii_font = load_font({32:26,24:22,20:18}[CJK_PX])
+print(f"Loaded Songti at {CJK_PX}px and {ASCII_PX}px", file=sys.stderr)
+
+
+def render_glyph(ch, font, cell_w, cell_h, threshold=140):
+    """Render char centered in cell_w x cell_h, return packed 1-bit bytes.
+    Packing: row-major, MSB-first, bytes_per_row = ceil(cell_w / 8)."""
+    img = Image.new("L", (cell_w, cell_h), 255)
+    d = ImageDraw.Draw(img)
+    bbox = d.textbbox((0, 0), ch, font=font)
+    tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+    if tw <= 0 or th <= 0:
+        return None  # glyph not in font
+    x = (cell_w - tw) // 2 - bbox[0]
+    y = (cell_h - th) // 2 - bbox[1]
+    d.text((x, y), ch, font=font, fill=0)
+    px = img.load()
+    bytes_per_row = (cell_w + 7) // 8
+    out = bytearray(bytes_per_row * cell_h)
+    for yy in range(cell_h):
+        for xx in range(cell_w):
+            if px[xx, yy] < threshold:
+                out[yy * bytes_per_row + (xx >> 3)] |= 0x80 >> (xx & 7)
+    return bytes(out)
+
+
+def render_ascii(ch, font, cell_w, cell_h, threshold=140):
+    """Render ASCII char cropped tightly into cell_w x cell_h cell.
+    Most ASCII chars are narrower than cell_w; we center horizontally."""
+    # Render to a wider canvas first to measure
+    wide = Image.new("L", (cell_w * 2, cell_h), 255)
+    d = ImageDraw.Draw(wide)
+    d.text((0, 0), ch, font=font, fill=0)
+    bbox = d.textbbox((0, 0), ch, font=font)
+    tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+    if tw <= 0 or th <= 0:
+        return None
+    # Crop the rendered char
+    cropped = wide.crop(bbox)
+    cw = cropped.width
+    # Paste into cell canvas, centered horizontally
+    img = Image.new("L", (cell_w, cell_h), 255)
+    x = (cell_w - cw) // 2
+    y = (cell_h - th) // 2 - 0  # baseline-aligned-ish
+    img.paste(cropped, (x, y))
+    px = img.load()
+    bytes_per_row = (cell_w + 7) // 8
+    out = bytearray(bytes_per_row * cell_h)
+    for yy in range(cell_h):
+        for xx in range(cell_w):
+            if px[xx, yy] < threshold:
+                out[yy * bytes_per_row + (xx >> 3)] |= 0x80 >> (xx & 7)
+    return bytes(out)
+
+
+def gb2312_l1_chars():
+    """GB2312 Level 1: rows B0-D7, cols A1-FE. Sorted by pinyin."""
+    chars = []
+    for row in range(0xB0, 0xD8):
+        for col in range(0xA1, 0xFF):
+            try:
+                ch = bytes([row, col]).decode("gb2312")
+                chars.append(ch)
+            except (UnicodeDecodeError, ValueError):
+                pass
+    return chars
+
+
+def main():
+    cjk_chars = gb2312_l1_chars()
+    print(f"GB2312 L1: {len(cjk_chars)} chars", file=sys.stderr)
+
+    # Supplementary chars needed for our domain (lunar calendar etc.)
+    # that may not be in GB2312 L1
+    SUPP_CJK = "廿卅卌皕，。；"
+    for ch in SUPP_CJK:
+        if ch not in cjk_chars:
+            cjk_chars.append(ch)
+    print(f"After supplements: {len(cjk_chars)} chars", file=sys.stderr)
+
+    # ASCII printable
+    ascii_chars = [chr(c) for c in range(0x20, 0x7F)]
+    # Latin-1 extras (rendered as ASCII cell)
+    extra_latin = "°·×—"
+    ascii_chars += list(extra_latin)
+    # CJK 标点补充（书名号/引号等，按 ASCII 半宽渲染）
+    ascii_chars += list("「」『』…‰")
+
+    cjk_map = {}
+    miss = 0
+    for ch in cjk_chars:
+        b = render_glyph(ch, cjk_font, CJK_PX, CJK_PX)
+        if b is None or sum(b) == 0:
+            miss += 1
+            continue
+        cjk_map[ch] = base64.b64encode(b).decode("ascii")
+    print(f"CJK rendered: {len(cjk_map)}, missing: {miss}", file=sys.stderr)
+
+    ascii_map = {}
+    for ch in ascii_chars:
+        b = render_ascii(ch, ascii_font, CJK_PX // 2, CJK_PX)
+        if b is None or sum(b) == 0:
+            continue
+        ascii_map[ch] = base64.b64encode(b).decode("ascii")
+    print(f"ASCII rendered: {len(ascii_map)}", file=sys.stderr)
+
+    # Emit JS
+    out = []
+    out.append("// AUTO-GENERATED by gen_font.py — DO NOT EDIT")
+    out.append(f"// Native {CJK_PX}px Songti; packed rows, MSB first")
+    out.append(f"export const FONT_W = {CJK_PX}, FONT_H = {CJK_PX}, FONT_BYTES = {CJK_PX * ((CJK_PX + 7)//8)};")
+    out.append(f"export const ASCII_W = {CJK_PX//2}, ASCII_H = {CJK_PX}, ASCII_BYTES = {CJK_PX * ((CJK_PX//2 + 7)//8)};")
+    out.append("const GLYPH_CJK = {")
+    items = list(cjk_map.items())
+    for i, (ch, b64) in enumerate(items):
+        comma = "," if i < len(items) - 1 else ""
+        # Use json.dumps for safe JS string escaping (handles ", \, control chars)
+        key = json.dumps(ch, ensure_ascii=True)
+        out.append(f'  {key}:"{b64}"{comma}')
+    out.append("};")
+    out.append("")
+    out.append("const GLYPH_ASCII = {")
+    items = list(ascii_map.items())
+    for i, (ch, b64) in enumerate(items):
+        comma = "," if i < len(items) - 1 else ""
+        key = json.dumps(ch, ensure_ascii=True)
+        out.append(f'  {key}:"{b64}"{comma}')
+    out.append("};")
+    out.append("")
+    out.append("""const _cjkCache = new Map();
+export function getGlyph(ch) {
+  let g = _cjkCache.get(ch);
+  if (g === undefined) {
+    const b64 = GLYPH_CJK[ch];
+    if (!b64) return null;
+    const bin = atob(b64);
+    g = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) g[i] = bin.charCodeAt(i);
+    _cjkCache.set(ch, g);
+  }
+  return g;
+}
+
+const _asciiCache = new Map();
+export function getAscii(ch) {
+  let g = _asciiCache.get(ch);
+  if (g === undefined) {
+    const b64 = GLYPH_ASCII[ch];
+    if (!b64) return null;
+    const bin = atob(b64);
+    g = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) g[i] = bin.charCodeAt(i);
+    _asciiCache.set(ch, g);
+  }
+  return g;
+}
+
+// True if char has ASCII-width glyph (digits, basic Latin, our Latin-1 extras)
+export function isAscii(ch) {
+  return GLYPH_ASCII[ch] !== undefined;
+}
+""")
+    with open(Path(__file__).with_name({32:"font_data.js",24:"font_small_data.js",20:"font_compact_data.js"}[CJK_PX]), "w", encoding="utf-8") as f:
+        f.write("\n".join(out))
+    print(f"Wrote font_data.js ({len(cjk_map)} CJK + {len(ascii_map)} ASCII)",
+          file=sys.stderr)
+
+
+if __name__ == "__main__":
+    main()

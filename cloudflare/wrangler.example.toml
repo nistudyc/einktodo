@@ -1,0 +1,44 @@
+name = "einktodo"
+main = "worker.js"
+compatibility_date = "2025-01-01"
+
+# Replace with a domain you control; Passkey and Feishu OAuth require this origin.
+# routes = [{ pattern = "eink.example.com", custom_domain = true }]
+
+[assets]
+directory = "./public"
+not_found_handling = "none"
+binding = "ASSETS"
+run_worker_first = true
+html_handling = "none"
+
+[[kv_namespaces]]
+binding = "EINK_KV"
+id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
+
+# wrangler secret put BRIDGE_TOKEN        （邮件桥备用密钥，可选）
+# wrangler secret put DEVICE_TOKEN        （/api/display/v2 设备位图端点的 Bearer Token，强烈建议设置）
+# wrangler secret put FEISHU_ENCRYPT_KEY  （飞书事件加密策略的 Encrypt Key，若启用了加密）
+
+[vars]
+AUTH_ORIGIN = "https://eink.example.com"
+FEISHU_APP_ID = "REPLACE_WITH_YOUR_FEISHU_APP_ID"
+
+[build]
+command = "npm run build"
+
+[[durable_objects.bindings]]
+name = "AUTH"
+class_name = "OwnerAuth"
+
+[[migrations]]
+tag = "v1-owner-auth"
+new_sqlite_classes = ["OwnerAuth"]
+
+# DATA_ENCRYPTION_KEY: 32 random bytes encoded as base64, set with wrangler secret.
+# ADMIN_PASSWORD: initial owner verification; password login is disabled after Passkey enrollment.
+
+[triggers]
+crons = ["*/2 * * * *"]
+
+# FEISHU_APP_SECRET and FEISHU_MAILBOX are Worker Secrets; no user OAuth tokens are uploaded.

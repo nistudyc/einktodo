@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>墨屏日报 · 编务台</title>
+<style>
+:root{
+  --paper:#ece8df;--ink:#1a1815;--ink2:#57503f;--ink3:#8a8271;
+  --serif:"Songti SC","STSong","Noto Serif CJK SC","SimSun",serif;
+  --mono:"SF Mono","Menlo",monospace;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{
+  background:var(--paper);color:var(--ink);font-family:var(--serif);
+  min-height:100vh;padding:4vh 6vw;
+  background-image:
+    radial-gradient(circle at 20% 30%, rgba(0,0,0,.03) 0 1px, transparent 1px),
+    radial-gradient(circle at 70% 60%, rgba(0,0,0,.02) 0 1px, transparent 1px);
+  background-size:17px 17px,23px 23px;
+}
+header{border-bottom:3px double var(--ink);padding-bottom:1.2vh;margin-bottom:3vh;
+  display:flex;align-items:baseline;gap:1.5em;flex-wrap:wrap}
+header h1{font-size:30px;font-weight:900;letter-spacing:.25em}
+header .sub{font-family:var(--mono);color:var(--ink2);font-size:12px;letter-spacing:.15em}
+header .back{margin-left:auto;font-size:14px;color:var(--ink2);text-decoration:none;border-bottom:1px solid var(--ink3)}
+
+.grid{display:grid;grid-template-columns:minmax(300px,380px) 1fr;gap:4vw;align-items:start}
+@media(max-width:900px){.grid{grid-template-columns:1fr}}
+
+.panel{border:1px solid var(--ink);padding:2.2vh 1.6vw;background:rgba(255,255,255,.25)}
+.panel h2{font-size:17px;font-weight:900;letter-spacing:.4em;border-bottom:1px solid var(--ink);
+  padding-bottom:.7vh;margin-bottom:1.6vh}
+.field{margin-bottom:1.8vh}
+.field label{display:block;font-size:13px;color:var(--ink2);margin-bottom:.5vh;letter-spacing:.1em}
+input[type=text],input[type=number],select,textarea{
+  width:100%;font-family:var(--serif);font-size:15px;color:var(--ink);
+  background:transparent;border:none;border-bottom:1.5px solid var(--ink);
+  padding:.4em .1em;outline:none;border-radius:0;
+}
+textarea{resize:vertical;min-height:3.2em;line-height:1.6}
+.seg{display:flex;border:1px solid var(--ink);width:fit-content}
+.seg button{
+  font-family:var(--serif);font-size:14px;padding:.45em 1.2em;background:transparent;
+  border:none;color:var(--ink2);cursor:pointer;letter-spacing:.1em;
+}
+.seg button+button{border-left:1px solid var(--ink)}
+.seg button.on{background:var(--ink);color:var(--paper)}
+.hint{font-size:11.5px;color:var(--ink3);font-family:var(--mono);margin-top:.4vh}
+
+/* Todo 编辑 */
+#todoEditor{display:flex;flex-direction:column;gap:.9vh;margin-top:.5vh}
+.todo-row{display:flex;align-items:center;gap:.8em;border:1px dashed var(--ink3);padding:.55em .8em;background:rgba(255,255,255,.2)}
+.todo-row .txt{flex:1;font-size:15px;border:none;background:transparent;outline:none;font-family:var(--serif);color:var(--ink);padding:.15em 0;border-bottom:1px dotted transparent}
+.todo-row .txt:focus{border-bottom:1px dotted var(--ink)}
+.todo-row .txt.done{color:var(--ink3);text-decoration:line-through}
+.icon-btn{
+  font-family:var(--mono);font-size:13px;border:1px solid var(--ink);background:transparent;
+  color:var(--ink);width:2em;height:2em;cursor:pointer;line-height:1;flex:none;
+}
+.icon-btn:hover{background:var(--ink);color:var(--paper)}
+.icon-btn.del{border-color:var(--ink3);color:var(--ink3)}
+#addTodoRow{display:flex;gap:.8em}
+#addTodoRow input{flex:1}
+.btn{
+  font-family:var(--serif);font-size:14px;letter-spacing:.2em;cursor:pointer;
+  border:1px solid var(--ink);background:transparent;color:var(--ink);padding:.5em 1.4em;
+}
+.btn:hover{background:var(--ink);color:var(--paper)}
+.btn.solid{background:var(--ink);color:var(--paper)}
+.btn.solid:hover{background:transparent;color:var(--ink)}
+.row-actions{display:flex;gap:1em;margin-top:2vh;flex-wrap:wrap}
+
+/* 城市搜索 */
+#cityResults{border:1px solid var(--ink3);margin-top:.5vh;max-height:150px;overflow:auto;display:none}
+#cityResults div{padding:.45em .8em;font-size:13.5px;cursor:pointer}
+#cityResults div:hover{background:var(--ink);color:var(--paper)}
+#cityResults div small{color:var(--ink3);font-family:var(--mono);margin-left:.6em}
+#cityResults div:hover small{color:var(--paper2)}
+
+/* 预览 */
+.preview-wrap{border:1px solid var(--ink);position:sticky;top:4vh}
+.preview-wrap .bar{
+  display:flex;justify-content:space-between;align-items:center;
+  border-bottom:1px solid var(--ink);padding:.5em 1em;
+  font-family:var(--mono);font-size:11px;color:var(--ink2);letter-spacing:.12em;
+}
+.preview-wrap .bar button{font-family:var(--mono);font-size:11px;border:1px solid var(--ink);background:none;cursor:pointer;padding:.2em .8em;letter-spacing:.1em}
+#previewFrame{width:100%;height:78vh;border:none;background:#ece8df}
+.toast{
+  position:fixed;bottom:3vh;left:50%;transform:translateX(-50%);
+  background:var(--ink);color:var(--paper);font-size:13px;letter-spacing:.2em;
+  padding:.6em 2em;opacity:0;transition:opacity .3s;pointer-events:none;z-index:9;
+}
+.toast.show{opacity:.92}
+.status-ok{color:var(--ink2);font-family:var(--mono);font-size:11.5px;margin-top:1vh;letter-spacing:.08em}
+</style>
+</head>
+<body>
+<div id="loginGate" style="display:none;position:fixed;inset:0;background:#f4f1ea;z-index:99;align-items:center;justify-content:center;flex-direction:column">
+  <div style="font:600 22px/1 var(--serif);letter-spacing:.3em;margin-bottom:18px">编 务 台</div>
+  <div style="color:var(--ink2);font-size:12px;margin-bottom:20px;letter-spacing:.1em">首次使用请用后台密码登录并绑定 Passkey</div>
+  <form id="loginForm" style="display:flex;gap:8px">
+    <input type="password" id="loginPwd" placeholder="密码" autocomplete="current-password" style="width:200px;font:15px/1 var(--mono);padding:8px 10px;border:1px solid var(--ink);background:#fff">
+    <button class="btn solid" type="submit">进 入</button>
+  </form>
+  <button class="btn solid" id="passkeyLogin" style="margin-top:16px">使用 Passkey 登录</button>
+  <div id="loginErr" style="color:#c0392b;font-size:12px;margin-top:12px;min-height:16px"></div>
+</div>
+<header>
+  <h1>编 务 台</h1>
+  <span class="sub">E-INK BRIEFING · ADMIN CONSOLE</span>
+  <a class="back" href="/eink" target="_blank">打开墨屏页 ↗</a>
+</header>
+
+<div style="padding:1em 4vw"><button class="btn" id="addPasskey">绑定 Passkey</button> <button class="btn" id="logout">退出登录</button><span id="authStatus" style="margin-left:1em"></span></div>
+<div class="grid">
+  <!-- 左：编辑 -->
+  <div>
+    <div class="panel">
+      <h2>画 面</h2>
+      <div class="hint">日期、待办、未读邮件数量、简版天气、每日一句。右侧直接预览设备位图；尺寸跟随设备实际请求。</div>
+    </div>
+
+    <div class="panel" style="margin-top:2.4vh">
+      <h2>气 象</h2>
+      <div class="field">
+        <label>城市（输入后搜索选择）</label>
+        <input type="text" id="cityInput" placeholder="如：杭州 / Osaka / Milan" autocomplete="off">
+        <div id="cityResults"></div>
+        <div class="status-ok" id="cityNow"></div>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-top:2.4vh">
+      <h2>待 办</h2>
+      <div class="hint" style="margin-bottom:1vh">连接飞书后同步与你相关的全部未完成任务（负责、创建、分配、关注）；在飞书编辑或完成后自动更新。按创建时间从旧到新固定显示，超出屏幕的数量以 +N 表示。</div>
+      <div id="taskStatus" class="hint"></div><div class="row-actions"><button class="btn" id="btnConnectTasks">连接飞书待办</button><button class="btn" id="btnSyncTasks">同步待办</button></div><div id="todoEditor"></div>
+      <div id="addTodoRow" style="margin-top:1vh">
+        <input type="text" id="newTodo" placeholder="新增一条待办…" autocomplete="off">
+        <button class="btn" id="btnAddTodo">增 补</button>
+      </div>
+      <div class="row-actions">
+        <button class="btn" id="btnClearDone">清除已办</button>
+      </div>
+    </div>
+
+    <div class="row-actions">
+      <button class="btn solid" id="btnSave">存 版 付 印</button>
+      <button class="btn" id="btnSyncMail">同步邮件数量</button>
+      <button class="btn" id="btnRefresh">强 制 刷 新</button>
+    </div>
+    <div class="status-ok" id="saveStatus"></div>
+    <div class="status-ok" id="mailStatus"></div>
+  </div>
+
+  <!-- 右：实时预览 -->
+  <div class="preview-wrap">
+    <div class="bar">
+      <span>与设备相同的画面</span>
+      <button id="btnReload">重新载入</button>
+    </div>
+    <iframe id="previewFrame" src="about:blank"></iframe>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="/webauthn.js"></script>
+<script>
+const $=s=>document.querySelector(s);
+const toast=m=>{const t=$('#toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1800)};
+let CFG=null, TASKS_CONNECTED=false;
+// Remove the legacy plaintext password; authentication now uses an HttpOnly cookie.
+localStorage.removeItem('einkAdminPwd');
+const authHeaders=()=>({});
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+window.addEventListener('unhandledrejection',e=>{toast(e.reason?.message||'请求失败，请重试');e.preventDefault()});
+
+/* ---------- 载入 ---------- */
+async function loadAll(){
+  const r=await fetch('/api/state',{headers:authHeaders()});
+  if(r.status===401){showLogin();return;}
+  if(!r.ok)throw new Error('载入失败，请稍后重试');
+  hideLogin();
+  const s=await r.json();
+  CFG=s.config;TASKS_CONNECTED=!!s.tasks?.connected;
+  $('#taskStatus').textContent=TASKS_CONNECTED?(s.tasks.error||`飞书待办 ${CFG.todos.length} 项 · 云端每 2 分钟同步`):'尚未连接飞书待办，目前显示手动清单';
+  $('#btnConnectTasks').textContent=TASKS_CONNECTED?'重新连接飞书':'连接飞书待办';
+  $('#addTodoRow').hidden=TASKS_CONNECTED;$('#btnClearDone').hidden=TASKS_CONNECTED;
+
+  $('#mailStatus').textContent=s.mail?.unreadCount==null?'飞书邮箱尚未连接':(s.mail.stale?`邮件同步待更新 · 上次 ${s.mail.unreadCount} 封未读`:`飞书收件箱 ${s.mail.unreadCount} 封未读 · 云端每 2 分钟同步`);
+  const status=await (await fetch('/api/auth/status')).json();
+  $('#authStatus').textContent=status.passkeyCount?`已绑定 ${status.passkeyCount} 个 Passkey`:'尚未绑定 Passkey，请先绑定以关闭密码登录';
+  // 版面
+  document.querySelectorAll('#segLayout button').forEach(b=>b.classList.toggle('on',b.dataset.v===CFG.layout));
+
+  $('#cityNow').textContent=`当前：${CFG.city.name} (${CFG.city.lat.toFixed(2)}, ${CFG.city.lon.toFixed(2)})`;
+  renderTodoEditor();
+}
+
+$('#btnConnectTasks').onclick=async()=>{const result=await api('/api/feishu/connect',{});location.href=result.url;};
+$('#btnSyncTasks').onclick=async()=>{await api('/api/feishu/sync',{});await loadAll();reloadPreview();};
+
+/* ---------- Todo 编辑 ---------- */
+function renderTodoEditor(){
+  const box=$('#todoEditor');
+  box.innerHTML='';
+  (CFG.todos||[]).forEach(t=>{
+    const row=document.createElement('div');row.className='todo-row';
+    if(TASKS_CONNECTED){row.textContent=t.text;const stamp=t.dueAt||t.createdAt;if(stamp){const date=document.createElement('small');date.textContent=` ${t.dueAt?'截止':'创建'} ${new Date(stamp+8*3600000).toISOString().slice(0,10)}`;row.appendChild(date);}box.appendChild(row);return;}
+
+    row.innerHTML=`
+      <button class="icon-btn tog" title="完成/重开">${t.done?'✓':'○'}</button>
+      <input class="txt ${t.done?'done':''}" value="${esc(t.text)}" readonly>
+      <button class="icon-btn up" title="上移">↑</button>
+      <button class="icon-btn dn" title="下移">↓</button>
+      <button class="icon-btn del" title="删除">✕</button>`;
+    row.querySelector('.tog').onclick=async()=>{
+      await api('/api/todos',{action:'toggle',id:t.id});await loadAll();reloadPreview();
+    };
+    row.querySelector('.del').onclick=async()=>{
+      await api('/api/todos',{action:'remove',id:t.id});await loadAll();reloadPreview();
+    };
+    row.querySelector('.up').onclick=async()=>{await api('/api/todos',{action:'move',id:t.id,delta:-1});await loadAll();reloadPreview();};
+    row.querySelector('.dn').onclick=async()=>{await api('/api/todos',{action:'move',id:t.id,delta:1});await loadAll();reloadPreview();};
+    box.appendChild(row);
+  });
+}
+$('#btnAddTodo').onclick=async()=>{
+  const v=$('#newTodo').value.trim();if(!v)return;
+  await api('/api/todos',{action:'add',text:v});
+  $('#newTodo').value='';
+  await loadAll();reloadPreview();
+};
+$('#newTodo').addEventListener('keydown',e=>{if(e.key==='Enter')$('#btnAddTodo').click()});
+$('#btnClearDone').onclick=async()=>{await api('/api/todos',{action:'clearDone'});await loadAll();reloadPreview();};
+
+/* ---------- 城市搜索 ---------- */
+let searchTimer=null;
+$('#cityInput').addEventListener('input',e=>{
+  clearTimeout(searchTimer);
+  const q=e.target.value.trim();
+  if(q.length<2){$('#cityResults').style.display='none';return}
+  searchTimer=setTimeout(async()=>{
+    const r=await fetch('/api/geocode?name='+encodeURIComponent(q),{headers:authHeaders()});
+    const d=await r.json();
+    const box=$('#cityResults');
+    if(!d.results||!d.results.length){box.style.display='none';return}
+    box.innerHTML=d.results.map((it,i)=>
+      `<div data-i="${i}">${esc(it.name)}<small>${esc(it.admin||'')} ${esc(it.country)}</small></div>`).join('');
+    box.style.display='block';
+    box.querySelectorAll('div').forEach(el=>{
+      el.onclick=()=>{
+        const it=d.results[+el.dataset.i];
+        CFG.city={name:it.name,lat:it.lat,lon:it.lon};
+        $('#cityInput').value='';box.style.display='none';
+        $('#cityNow').textContent=`已选：${it.name} (${it.lat.toFixed(2)}, ${it.lon.toFixed(2)}) — 记得点「存版付印」`;
+      };
+    });
+  },350);
+});
+
+/* ---------- 保存 ---------- */
+async function api(url,body){
+  const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json',...authHeaders()},body:JSON.stringify(body)});
+  if(r.status===401){showLogin();throw new Error('unauthorized');}
+  const data=await r.json();
+  if(!r.ok)throw new Error(data.error||'操作失败');
+  return data;
+}
+$('#btnSave').onclick=async()=>{
+  await api('/api/config',{
+    city:CFG.city,
+  });
+  toast('已存版 · 墨屏将在下轮刷新生效');
+  $('#saveStatus').textContent=`存版时间 ${new Date().toLocaleTimeString('zh-CN')}`;
+  reloadPreview();
+};
+$('#btnSyncMail').onclick=async()=>{await api('/api/mail/sync',{});toast('邮件数量已同步');await loadAll();reloadPreview()};
+$('#btnRefresh').onclick=forceRefresh;
+async function forceRefresh(){
+  const d=await api('/api/force-refresh',{});
+  toast('已请求刷新 · 设备下次联网拉取时生效');
+  $('#saveStatus').textContent=`刷新请求已保存 ${new Date().toLocaleTimeString('zh-CN')}`;
+  reloadPreview();
+}
+function reloadPreview(){$('#previewFrame').src='/eink?'+Date.now()}
+$('#btnReload').onclick=reloadPreview;
+
+/* ---------- 登录门 ---------- */
+function showLogin(){
+  const g=$('#loginGate');
+  g.style.display='flex';
+  CFG=null;$('#todoEditor').replaceChildren();$('#previewFrame').src='about:blank';
+  $('#loginPwd').value='';
+  $('#loginPwd').focus();
+}
+function hideLogin(){$('#loginGate').style.display='none'}
+async function afterLogin(){hideLogin();$('#loginErr').textContent='';$('#loginPwd').value='';await loadAll();reloadPreview()}
+$('#loginForm').addEventListener('submit',async e=>{
+  e.preventDefault();
+  try{await api('/api/login',{password:$('#loginPwd').value});await afterLogin()}
+  catch(e){$('#loginErr').textContent=e.message}
+});
+$('#passkeyLogin').onclick=async()=>{
+  try{
+    const optionsJSON=await api('/api/auth/passkey/login/options',{});
+    const response=await SimpleWebAuthnBrowser.startAuthentication({optionsJSON});
+    await api('/api/auth/passkey/login/verify',response);await afterLogin();
+  }catch(e){$('#loginErr').textContent=e.name==='NotAllowedError'?'验证已取消或超时，请重试':e.message}
+};
+$('#addPasskey').onclick=async()=>{
+  try{
+    const optionsJSON=await api('/api/auth/passkey/register/options',{});
+    const response=await SimpleWebAuthnBrowser.startRegistration({optionsJSON});
+    await api('/api/auth/passkey/register/verify',response);
+    toast('Passkey 已绑定，之后可用指纹或设备验证登录');await loadAll();
+  }catch(e){toast(e.name==='NotAllowedError'?'绑定已取消或超时，请重试':e.message)}
+};
+$('#logout').onclick=async()=>{await api('/api/auth/logout',{});showLogin()};
+async function init(){
+  const r=await fetch('/api/auth/status');
+  if(!r.ok)throw new Error('登录服务暂不可用');
+  const status=await r.json();
+  $('#loginForm').style.display=status.passwordAllowed?'flex':'none';
+  if(status.authenticated){await loadAll();reloadPreview()}else showLogin();
+}
+init().catch(e=>{showLogin();$('#loginErr').textContent=e.message});
+</script>
+</body>
+</html>

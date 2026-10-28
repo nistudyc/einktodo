@@ -1,0 +1,44 @@
+# Credentials, local state and deployment configuration
+.wrangler-home/
+.wrangler/
+node_modules/
+.dev.vars*
+.env*
+!.env.example
+!**/.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.sqlite*
+*.db
+*.log
+*.bak
+.DS_Store
+__pycache__/
+.venv/
+config.json
+/cloudflare/wrangler.toml
+/cloudflare/wrangler.local.*
+
+# Personal deployment notes and obsolete local prototypes
+/HANDOFF.md
+/DEPLOY.md
+/cloudflare/SECURITY.md
+/server.py
+/admin.html
+/eink.html
+/cloudflare/push_mail.py
+/cloudflare/com.*.plist
+
+# Local QA artifacts; only curated synthetic preview images belong in docs/
+/.screenshots/
+/.codex/
+/.agents/
+/.aws/
+
+# Generated assets: reproduce locally using licensed fonts and npm dependencies
+/cloudflare/font_data.js
+/cloudflare/font_small_data.js
+/cloudflare/font_compact_data.js
+/cloudflare/public/webauthn.js

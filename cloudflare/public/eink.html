@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>墨水屏实际画面</title>
+<style>
+:root{--paper:#ece8df;--ink:#1a1815;--gap:12px}
+*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font-family:serif}
+main{overflow:auto;padding:var(--gap);min-height:100vh;display:flex;flex-direction:column;justify-content:center;gap:var(--gap)}
+img{display:block;width:auto;max-width:none;height:auto;align-self:flex-start;margin-inline:auto;image-rendering:pixelated;background:white}
+p{margin:0;font-size:14px;text-align:center;line-height:1.5}a{color:inherit}img[hidden]{display:none}
+</style>
+</head>
+<body>
+<main><img id="screen" alt="墨水屏画面：日期、待办、未读邮件数量、天气和每日一句" hidden><p id="status" role="status">正在读取设备画面…</p></main>
+<script>
+const screen=document.querySelector('#screen'),status=document.querySelector('#status');
+let currentURL,loading=false;
+async function refresh(){
+  if(loading)return;loading=true;
+  try{
+    const response=await fetch('/api/display/preview',{cache:'no-store'});
+    if(response.status===401){location.replace('/admin');return}
+    if(!response.ok)throw new Error('画面暂时无法更新，稍后会自动重试。');
+    const nextURL=URL.createObjectURL(await response.blob());
+    const image=new Image();image.src=nextURL;
+    try{await image.decode()}catch(error){URL.revokeObjectURL(nextURL);throw error}
+    screen.src=nextURL;screen.hidden=false;
+    if(currentURL)URL.revokeObjectURL(currentURL);currentURL=nextURL;
+    status.textContent='原尺寸清晰预览，可横向滚动 · 设备下次联网时更新';
+  }catch(error){status.textContent=error.message||'画面更新失败，请稍后重试。'}
+  finally{loading=false}
+}
+refresh();setInterval(refresh,60000);
+</script>
+</body>
+</html>
