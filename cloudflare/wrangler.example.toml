@@ -39,6 +39,6 @@ new_sqlite_classes = ["OwnerAuth"]
 # ADMIN_PASSWORD: initial owner verification; password login is disabled after Passkey enrollment.
 
 [triggers]
-crons = ["*/2 * * * *"]
+crons = ["* * * * *"]
 
 # FEISHU_APP_SECRET and FEISHU_MAILBOX are Worker Secrets; no user OAuth tokens are uploaded.

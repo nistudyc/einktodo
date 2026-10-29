@@ -73,3 +73,18 @@ test('related tasks require explicit ID type and continue past an empty filtered
  });
  assert.equal(pages,2);assert.equal(result.todos.length,1);
 });
+
+test('unchanged tasks skip the KV write entirely',async()=>{
+ const {env}=environment(),kv=privateKV(env);
+ await kv.put('task-token',JSON.stringify({access_token:'valid',refresh_token:'refresh',expiresAt:Date.now()+7200000}));
+ // Response bodies are single-use, so hand out a fresh one per fetch.
+ const page=()=>json({code:0,data:{items:[{guid:'a',summary:'固定待办',created_at:'1'}],has_more:false}});
+ const first=await syncTasks(env,kv,page);
+ const stored1=await env.EINK_KV.get('tasks');
+ const again=await syncTasks(env,kv,page);
+ assert.deepEqual(again.todos,first.todos);
+ assert.equal(await env.EINK_KV.get('tasks'),stored1); // identical raw value → no rewrite
+ const changed=()=>json({code:0,data:{items:[{guid:'a',summary:'改了内容',created_at:'1'}],has_more:false}});
+ await syncTasks(env,kv,changed);
+ assert.notEqual(await env.EINK_KV.get('tasks'),stored1); // content change → write happens
+});

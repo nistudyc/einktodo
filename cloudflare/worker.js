@@ -136,7 +136,16 @@ async function handleFeishuEvent(request, env) {
 }
 
 /* ---------- 状态聚合（/api/state 与 /api/display/v2 共用） ---------- */
+// Short-lived in-isolate cache: device polling hits this far more often than data changes.
+// 30s keeps the bitmap fresh (weather caches 15min anyway) while cutting KV/DO reads massively.
+// Keyed by the stable AUTH binding so isolated environments (and tests) never share state.
+const STATE_CACHE_MS = 30_000;
+const stateCache = new WeakMap();
+
 async function gatherState(env) {
+  const cacheKey = env.AUTH || env;
+  const cached = stateCache.get(cacheKey);
+  if (cached && Date.now() - cached.ts < STATE_CACHE_MS) return cached.data;
   let cfg = await env.EINK_KV.get("config", { type: "json" });
   if (!cfg) { cfg = DEFAULT_CONFIG; await env.EINK_KV.put("config", JSON.stringify(cfg)); }
   const mail = mailStatus(await env.EINK_KV.get("mail", { type: "json" }));
@@ -145,7 +154,7 @@ async function gatherState(env) {
   const weather = await fetchWeather(cfg.city, env).catch(e => ({ error: String(e) }));
   const nowCN = new Date(Date.now() + 8 * 3600e3);
   const today = new Date(Date.UTC(nowCN.getUTCFullYear(), nowCN.getUTCMonth(), nowCN.getUTCDate()));
-  return {
+  const data = {
     config: cfg,
     lunar: lunarStr(today),
     issue: Math.floor((today - new Date(today.getUTCFullYear(), 0, 0)) / 86400000),
@@ -153,7 +162,7 @@ async function gatherState(env) {
     date: today.toISOString().slice(0, 10),
     motto: dailyMotto(today.toISOString().slice(0, 10)),
     mail, weather,
-    tasks: {connected:!!tasks?.connected, syncedAt:tasks?.syncedAt || null, error:tasks?.error || (tasks?.connected && (!tasks.syncedAt || Date.now()-tasks.syncedAt>600000) ? "飞书待办同步待更新" : null)},
+    tasks: {connected:!!tasks?.connected, syncedAt:tasks?.syncedAt || null, error:tasks?.error || null},
     unread: Number.isSafeInteger(mail.unreadCount) ? mail.unreadCount : null,
     updated: new Date().toLocaleTimeString("zh-CN", {
       timeZone: "Asia/Shanghai", hour: "2-digit", minute: "2-digit",
@@ -161,7 +170,10 @@ async function gatherState(env) {
     nowCN,
     now: new Date().toISOString(),
   };
+  stateCache.set(cacheKey, { ts: Date.now(), data });
+  return data;
 }
+const invalidateState = env => stateCache.delete(env.AUTH || env);
 
 /* ---------- 设备位图端点 /api/display/v2 ----------
    协议（esonwong/e-ink-todo-list 固件）：
@@ -292,6 +304,9 @@ export default {
     if (path === "/api/display/preview" && request.method === "GET")
       return handleDisplay(request, env, url, true);
 
+    // Writes below change what the next bitmap must show; drop the cached state immediately.
+    const dropCache = () => invalidateState(env);
+
     /* ---- 状态 ---- */
     if (path === "/api/state" && request.method === "GET") {
       const g = await adminGuard(request); if (g) return g;
@@ -305,11 +320,14 @@ export default {
       const body = await request.json();
       if (!Number.isSafeInteger(body.unreadCount) || body.unreadCount < 0) return corsJson({ error: "unreadCount required" }, 400);
       await env.EINK_KV.put("mail", JSON.stringify({ unreadCount: body.unreadCount, source: "bridge", syncedAt: Date.now(), error: null }));
+      dropCache();
       return corsJson({ ok: true });
     }
     if (path === "/api/mail/sync" && request.method === "POST") {
       const g = await adminGuard(request); if (g) return g;
-      return authService(env).fetch(new Request("https://internal/internal/mail-sync", { method: "POST" }));
+      const result = await authService(env).fetch(new Request("https://internal/internal/mail-sync", { method: "POST" }));
+      dropCache();
+      return result;
     }
     if (path === "/api/mail/clear" && request.method === "POST") {
       const g = await adminGuard(request); if (g) return g;
@@ -324,6 +342,7 @@ export default {
       await env.EINK_KV.delete(`wx:${cfg.city.lat.toFixed(3)},${cfg.city.lon.toFixed(3)}`);
       const rev = crypto.randomUUID();
       await env.EINK_KV.put("forceRev", String(rev));
+      dropCache();
       return corsJson({ ok: true, rev });
     }
 
@@ -335,6 +354,7 @@ export default {
       for (const k of ["city", "layout", "clock", "mailMax", "motto", "refreshSec"])
         if (k in p) cfg[k] = p[k];
       await env.EINK_KV.put("config", JSON.stringify(cfg));
+      dropCache();
       return corsJson({ ok: true });
     }
 
@@ -358,6 +378,7 @@ export default {
       }
       cfg.todos = todos;
       await env.EINK_KV.put("config", JSON.stringify(cfg));
+      dropCache();
       return corsJson({ ok: true, todos });
     }
 

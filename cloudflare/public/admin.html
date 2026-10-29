@@ -185,11 +185,11 @@ async function loadAll(){
   hideLogin();
   const s=await r.json();
   CFG=s.config;TASKS_CONNECTED=!!s.tasks?.connected;
-  $('#taskStatus').textContent=TASKS_CONNECTED?(s.tasks.error||`飞书待办 ${CFG.todos.length} 项 · 云端每 2 分钟同步`):'尚未连接飞书待办，目前显示手动清单';
+  $('#taskStatus').textContent=TASKS_CONNECTED?(s.tasks.error||`飞书待办 ${CFG.todos.length} 项 · 云端每分钟同步`):'尚未连接飞书待办，目前显示手动清单';
   $('#btnConnectTasks').textContent=TASKS_CONNECTED?'重新连接飞书':'连接飞书待办';
   $('#addTodoRow').hidden=TASKS_CONNECTED;$('#btnClearDone').hidden=TASKS_CONNECTED;
 
-  $('#mailStatus').textContent=s.mail?.unreadCount==null?'飞书邮箱尚未连接':(s.mail.stale?`邮件同步待更新 · 上次 ${s.mail.unreadCount} 封未读`:`飞书收件箱 ${s.mail.unreadCount} 封未读 · 云端每 2 分钟同步`);
+  $('#mailStatus').textContent=s.mail?.unreadCount==null?'飞书邮箱尚未连接':(s.mail.stale?`邮件同步待更新 · 上次 ${s.mail.unreadCount} 封未读`:`飞书收件箱 ${s.mail.unreadCount} 封未读 · 云端每分钟同步`);
   const status=await (await fetch('/api/auth/status')).json();
   $('#authStatus').textContent=status.passkeyCount?`已绑定 ${status.passkeyCount} 个 Passkey`:'尚未绑定 Passkey，请先绑定以关闭密码登录';
   // 版面

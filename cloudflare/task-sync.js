@@ -35,14 +35,19 @@ export async function syncTasks(env, kv, fetcher = fetch) {
       }
       if(!data.has_more){
         const snapshot={connected:true,source:'feishu',todos:[...tasks.values()].sort((a,b)=>a.createdAt-b.createdAt || a.id.localeCompare(b.id)),syncedAt:Date.now(),error:null};
-        await kv.put('tasks',JSON.stringify(snapshot));return snapshot;
+        // Nothing changed → skip the KV write entirely (protects the free daily write quota).
+        // The device gets freshness via 304 caching on /api/display/v2, not via syncedAt.
+        const unchanged=previous?.connected && !previous.error && JSON.stringify(previous.todos)===JSON.stringify(snapshot.todos);
+        if(!unchanged) await kv.put('tasks',JSON.stringify(snapshot));
+        return snapshot;
       }
       if(!data.page_token||seen.has(data.page_token))throw new Error('待办分页不完整');
       pageToken=data.page_token;seen.add(pageToken);
     }
     throw new Error('待办分页超出限制');
   } catch (error) {
-    await kv.put('tasks',JSON.stringify({...previous,connected:true,error:'飞书待办暂未同步，将自动重试',httpStatus:error.httpStatus||null,providerCode:error.providerCode??null,attemptedAt:Date.now()}));
+    if (!previous?.error || Date.now() - (previous?.attemptedAt || 0) >= 5 * 60_000)
+      await kv.put('tasks',JSON.stringify({...previous,connected:true,error:'飞书待办暂未同步，将自动重试',httpStatus:error.httpStatus||null,providerCode:error.providerCode??null,attemptedAt:Date.now()}));
     throw new Error('飞书待办暂未同步，将自动重试');
   }
 }
