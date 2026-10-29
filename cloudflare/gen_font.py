@@ -81,22 +81,25 @@ def render_ascii(ch, font, cell_w, cell_h, threshold=140):
     return bytes(out)
 
 
-def gb2312_l1_chars():
-    """GB2312 Level 1: rows B0-D7, cols A1-FE. Sorted by pinyin."""
+def gb2312_all_chars():
+    """Full GB2312: symbols (rows A1-A9) + Level 1 hanzi (B0-D7) + Level 2 hanzi (D8-F7).
+
+    Symbols include full-width punctuation （）“”、·、《》！？：；, Greek/Cyrillic
+    letters and box-drawing characters. Level 2 adds 3008 less common hanzi
+    so user todo text rarely misses glyphs."""
     chars = []
-    for row in range(0xB0, 0xD8):
+    for row in range(0xA1, 0xF8):
         for col in range(0xA1, 0xFF):
             try:
-                ch = bytes([row, col]).decode("gb2312")
-                chars.append(ch)
+                chars.append(bytes([row, col]).decode("gb2312"))
             except (UnicodeDecodeError, ValueError):
                 pass
     return chars
 
 
 def main():
-    cjk_chars = gb2312_l1_chars()
-    print(f"GB2312 L1: {len(cjk_chars)} chars", file=sys.stderr)
+    cjk_chars = gb2312_all_chars()
+    print(f"GB2312 full charset: {len(cjk_chars)} chars", file=sys.stderr)
 
     # Supplementary chars needed for our domain (lunar calendar etc.)
     # that may not be in GB2312 L1
@@ -109,7 +112,7 @@ def main():
     # ASCII printable
     ascii_chars = [chr(c) for c in range(0x20, 0x7F)]
     # Latin-1 extras (rendered as ASCII cell)
-    extra_latin = "°·×—"
+    extra_latin = "°·×—─"
     ascii_chars += list(extra_latin)
     # CJK 标点补充（书名号/引号等，按 ASCII 半宽渲染）
     ascii_chars += list("「」『』…‰")
