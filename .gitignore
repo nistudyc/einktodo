@@ -37,6 +37,9 @@ config.json
 /.agents/
 /.aws/
 
+# Firmware build tree (cloned from esonwong/e-ink-todo-list; keep its own .git)
+/firmware-src/
+
 # Generated assets: reproduce locally using licensed fonts and npm dependencies
 /cloudflare/font_data.js
 /cloudflare/font_small_data.js
