@@ -1,4 +1,6 @@
 const API = 'https://open.feishu.cn/open-apis';
+// KV free tier allows only 1000 writes/day; retry markers are throttled to hourly.
+const RETRY_WRITE_MS = 60 * 60_000;
 export const TASK_SCOPE = 'task:task:read offline_access';
 export const callbackURL = env => env.AUTH_ORIGIN + '/api/feishu/callback';
 export async function exchangeTaskToken(env, grant, kv, fetcher = fetch) {
@@ -46,7 +48,7 @@ export async function syncTasks(env, kv, fetcher = fetch) {
     }
     throw new Error('待办分页超出限制');
   } catch (error) {
-    if (!previous?.error || Date.now() - (previous?.attemptedAt || 0) >= 5 * 60_000)
+    if (!previous?.error || Date.now() - (previous?.attemptedAt || 0) >= RETRY_WRITE_MS)
       await kv.put('tasks',JSON.stringify({...previous,connected:true,error:'飞书待办暂未同步，将自动重试',httpStatus:error.httpStatus||null,providerCode:error.providerCode??null,attemptedAt:Date.now()}));
     throw new Error('飞书待办暂未同步，将自动重试');
   }

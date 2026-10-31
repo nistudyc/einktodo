@@ -80,7 +80,7 @@ async function fetchWeather(city, env) {
       hi: Math.round(d.temperature_2m_max[i]), lo: Math.round(d.temperature_2m_min[i]),
     })),
   };
-  await env.EINK_KV.put(key, JSON.stringify(out), { expirationTtl: 900 });
+  await env.EINK_KV.put(key, JSON.stringify(out), { expirationTtl: 1800 });
   return out;
 }
 
@@ -130,8 +130,8 @@ async function handleFeishuEvent(request, env) {
     const result = await authService(env).fetch(new Request("https://internal/internal/mail-sync", { method: "POST" }));
     if (!result.ok) return result;
   }
-  // Only retain callback status, never email content.
-  await env.EINK_KV.put("feishu:last", JSON.stringify({ ts: Date.now(), event_type: et, accepted: true }).slice(0, 10000));
+  // No KV write here: event callbacks can be frequent and every write burns the
+  // free daily quota; mail freshness is already handled by the cron sync.
   return json({ code: 0 });
 }
 
@@ -319,7 +319,9 @@ export default {
       if (!await bearerOk(request, env)) return corsJson({ error: "unauthorized" }, 401);
       const body = await request.json();
       if (!Number.isSafeInteger(body.unreadCount) || body.unreadCount < 0) return corsJson({ error: "unreadCount required" }, 400);
-      await env.EINK_KV.put("mail", JSON.stringify({ unreadCount: body.unreadCount, source: "bridge", syncedAt: Date.now(), error: null }));
+      const previous = await env.EINK_KV.get("mail", { type: "json" });
+      if (previous?.unreadCount !== body.unreadCount || previous?.error)
+        await env.EINK_KV.put("mail", JSON.stringify({ unreadCount: body.unreadCount, source: "bridge", syncedAt: Date.now(), error: null, attemptedAt: previous?.attemptedAt || null }));
       dropCache();
       return corsJson({ ok: true });
     }

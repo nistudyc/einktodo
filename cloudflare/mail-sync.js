@@ -1,9 +1,12 @@
 const API = 'https://open.feishu.cn/open-apis';
+// Cron runs every minute; KV free tier allows only 1000 writes/day. Throttle
+// unchanged/error snapshot refreshes to once per hour (~24 writes/day worst case).
+export const SNAPSHOT_REFRESH_MS = 60 * 60_000;
 export function mailStatus(mail, now = Date.now()) {
   const known = Number.isSafeInteger(mail?.unreadCount) && mail.unreadCount >= 0;
   return { unreadCount: known ? mail.unreadCount : null, source: mail?.source || null,
     syncedAt: mail?.syncedAt || null, error: mail?.error || null,
-    stale: !known || !!mail?.error || !mail?.syncedAt || now - mail.syncedAt > 10 * 60_000 };
+    stale: !known || !!mail?.error || !mail?.syncedAt || now - mail.syncedAt > 3 * SNAPSHOT_REFRESH_MS };
 }
 
 export async function syncUnread(env, fetcher = fetch) {
@@ -40,9 +43,10 @@ export async function syncUnread(env, fetcher = fetch) {
       }
       if (!result.data.has_more) {
         const mail = { unreadCount: ids.size, source: 'feishu-inbox', syncedAt: now, error: null };
-        // Refresh the snapshot periodically, without writing KV on every unchanged poll.
-        if (previous?.unreadCount !== mail.unreadCount || previous?.error || previous?.source !== mail.source ||
-            now - (previous?.syncedAt || 0) >= 5 * 60_000) await env.EINK_KV.put('mail', JSON.stringify(mail));
+        // Only write when the count actually changed, or to refresh the snapshot
+        // periodically (hourly — protects the free daily KV write quota).
+        if (previous?.unreadCount !== mail.unreadCount || previous?.error ||
+            now - (previous?.syncedAt || 0) >= SNAPSHOT_REFRESH_MS) await env.EINK_KV.put('mail', JSON.stringify(mail));
         return mailStatus(mail, now);
       }
       pageToken = result.data.page_token;
@@ -53,7 +57,7 @@ export async function syncUnread(env, fetcher = fetch) {
   } catch {
     const mail = { unreadCount: Number.isSafeInteger(previous?.unreadCount) ? previous.unreadCount : null,
       source: 'feishu-inbox', syncedAt: previous?.syncedAt || null, error: '邮件同步暂时失败', attemptedAt: now };
-    if (!previous?.error || now - (previous?.attemptedAt || 0) >= 5 * 60_000) await env.EINK_KV.put('mail', JSON.stringify(mail));
+    if (!previous?.attemptedAt || now - previous.attemptedAt >= SNAPSHOT_REFRESH_MS) await env.EINK_KV.put('mail', JSON.stringify(mail));
     throw new Error('邮件同步失败，保留上次数量；请检查飞书应用权限和凭据');
   }
 }

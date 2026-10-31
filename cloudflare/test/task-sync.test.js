@@ -88,3 +88,17 @@ test('unchanged tasks skip the KV write entirely',async()=>{
  await syncTasks(env,kv,changed);
  assert.notEqual(await env.EINK_KV.get('tasks'),stored1); // content change → write happens
 });
+test('repeated task sync failures rewrite the error marker at most once per hour',async()=>{
+ const {env}=environment(),kv=privateKV(env);
+ await kv.put('task-token',JSON.stringify({access_token:'valid',refresh_token:'refresh',expiresAt:Date.now()+7200000}));
+ const fail=()=>json({code:999});
+ await assert.rejects(syncTasks(env,kv,fail));
+ const stored=await env.EINK_KV.get('tasks');
+ await assert.rejects(syncTasks(env,kv,fail));
+ await assert.rejects(syncTasks(env,kv,fail));
+ assert.equal(await env.EINK_KV.get('tasks'),stored); // inside the retry window → no rewrite
+ const plain=JSON.parse(await kv.get('tasks'));plain.attemptedAt=Date.now()-3600_000-1; // window expired
+ await kv.put('tasks',JSON.stringify(plain));
+ await assert.rejects(syncTasks(env,kv,fail));
+ assert.notEqual(await env.EINK_KV.get('tasks'),stored); // window expired → write happens
+});

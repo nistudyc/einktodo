@@ -45,7 +45,7 @@ export async function migratePrivateKV(env) {
     if (value !== null && JSON.parse(value).encrypted !== 'aes-gcm-v1') await encrypted.put(name, value);
   }
   // Historical callback diagnostics may contain the complete unencrypted email event.
-  await env.EINK_KV.delete('feishu:last');
+  if (await env.EINK_KV.get('feishu:last') !== null) await env.EINK_KV.delete('feishu:last');
 }
 
 export function ownerKV(env) {

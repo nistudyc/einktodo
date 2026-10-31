@@ -23,7 +23,8 @@ test('failed or partial synchronization never invents zero or a truncated unread
  await assert.rejects(syncUnread(env,async()=>new Response('unavailable',{status:503})));
  const retained=mailStatus(await env.EINK_KV.get('mail',{type:'json'}));assert.equal(retained.unreadCount,42);assert.equal(retained.stale,true);
  assert.equal(mailStatus(null).unreadCount,null);
- assert.equal(mailStatus({unreadCount:0,syncedAt:Date.now()-700000}).stale,true);
+ assert.equal(mailStatus({unreadCount:0,syncedAt:Date.now()-3*3600_000-1}).stale,true);
+ assert.equal(mailStatus({unreadCount:0,syncedAt:Date.now()-3600_000}).stale,false);
  const loop=async url=>url.includes('/auth/')?json({code:0,tenant_access_token:'token'}):json({code:0,data:{items:['a'],has_more:true,page_token:'same'}});
  await assert.rejects(syncUnread(env,loop));assert.equal((await env.EINK_KV.get('mail',{type:'json'})).unreadCount,42);
 });
@@ -57,6 +58,32 @@ test('first cloud access seeds unread snapshot in the background without needing
   await Promise.all(background);
   const mail=await privateKV(env).get('mail',{type:'json'});assert.equal(mail.unreadCount,1);assert.equal(fetchMock.mock.callCount(),2);
  } finally {fetchMock.mock.restore();}
+});
+
+test('unchanged unread count does not rewrite KV before the hourly refresh window',async()=>{
+ const env=mailEnv();
+ const page=(count)=>async url=>url.includes('/auth/')?json({code:0,tenant_access_token:'token'}):json({code:0,data:{items:Array.from({length:count},(_,i)=>'id-'+i),has_more:false}});
+ await syncUnread(env,page(3));
+ const stored=await env.EINK_KV.get('mail');
+ await syncUnread(env,page(3));
+ assert.equal(await env.EINK_KV.get('mail'),stored); // identical snapshot → no rewrite
+ await syncUnread(env,page(2));
+ assert.notEqual(await env.EINK_KV.get('mail'),stored); // count change → write happens
+});
+test('repeated mail sync failures mark the error at most once per hour',async()=>{
+ const env=mailEnv();await env.EINK_KV.put('mail',JSON.stringify({unreadCount:7,syncedAt:Date.now(),source:'feishu-inbox'}));
+ let writes=0;const inner=env.EINK_KV.put.bind(env.EINK_KV);
+ env.EINK_KV={...env.EINK_KV,put:async(k,v,o)=>{writes++;return inner(k,v,o);}};
+ const fail=()=>new Response('unavailable',{status:503});
+ await assert.rejects(syncUnread(env,fail));
+ assert.equal(writes,1);
+ await assert.rejects(syncUnread(env,fail));
+ await assert.rejects(syncUnread(env,fail));
+ assert.equal(writes,1); // inside the retry window → no rewrite
+ const snapshot=JSON.parse(await env.EINK_KV.get('mail'));snapshot.attemptedAt=Date.now()-3600_000-1; // window expired
+ await inner('mail',JSON.stringify(snapshot));
+ await assert.rejects(syncUnread(env,fail));
+ assert.equal(writes,2); // window expired → one write happens
 });
 
 test('native small font covers display text and both footer forecasts remain visible',async()=>{
@@ -106,4 +133,12 @@ test('date and unread mail have equal text height and unread ink is centered in 
   const date=bounds(pixels,w,16,16,x-32,40,false);
   assert.ok(Math.abs((ink.bottom-ink.top)-(date.bottom-date.top))<=2);
  }
+});
+
+test('bridge recovery does not reset cloud failure write throttle',async()=>{
+ const env=mailEnv();
+ await env.EINK_KV.put('mail',JSON.stringify({unreadCount:7,source:'bridge',syncedAt:Date.now(),error:null,attemptedAt:Date.now()}));
+ const before=await env.EINK_KV.get('mail');
+ await assert.rejects(syncUnread(env,async()=>new Response('',{status:503})));
+ assert.equal(await env.EINK_KV.get('mail'),before);
 });
